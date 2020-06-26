@@ -4,11 +4,9 @@ an efficient algorithm for skin smoothing implementation in c
 ## The algorithm steps are as follows
 1.  detect skin color, adapt radius according to skin color ratio
 
-2.  perform edge detection to obtain a edge map
+2.  perform edge detection to obtain a edge map && smoothing level for apply skin denoise
 
-3.  based on edge map and smoothing level for apply skin denoise
-
-4.  re-detect skin color based on the denoise results, filtered non-skin areas
+3.  re-detect skin color based on the denoise results, filtered non-skin areas
 
 ## Donating
 If you found this project useful, consider buying me a coffee

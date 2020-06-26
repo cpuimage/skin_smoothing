@@ -221,82 +221,9 @@ void getOffsetPos(int *offsetPos, int length, int left, int right, int step) {
     }
 }
 
-void edgeDetection(unsigned char *input, unsigned char *output, int width, int height, int channels, int radius) {
-    if ((input == NULL) || (output == NULL)) return;
-    if ((width <= 0) || (height <= 0)) return;
-    if ((radius <= 0)) return;
-    if ((channels != 1) && (channels != 3)) return;
-    int windowSize = (2 * radius + 1) * (2 * radius + 1);
-    int *colValue = (int *) malloc(width * channels * sizeof(int));
-    int *rowPos = (int *) malloc((width + radius + radius) * channels * sizeof(int));
-    int *colPos = (int *) malloc((height + radius + radius) * channels * sizeof(int));
-    if ((colValue == NULL) || (rowPos == NULL) || (colPos == NULL)) {
-        if (colValue) free(colValue);
-        if (rowPos) free(rowPos);
-        if (colPos) free(colPos);
-        return;
-    }
-    int stride = width * channels;
-    getOffsetPos(rowPos, width, radius, radius, channels);
-    getOffsetPos(colPos, height, radius, radius, stride);
-    int *rowOffset = rowPos + radius;
-    int *colOffSet = colPos + radius;
-    for (int y = 0; y < height; y++) {
-        unsigned char *scanInLine = input + y * stride;
-        unsigned char *scanOutLine = output + y * stride;
-        if (y == 0) {
-            for (int x = 0; x < stride; x += channels) {
-                int colSum[3] = {0};
-                for (int z = -radius; z <= radius; z++) {
-                    unsigned char *sample = input + colOffSet[z] + x;
-                    for (int c = 0; c < channels; ++c) {
-                        colSum[c] += sample[c];
-                    }
-                }
-                for (int c = 0; c < channels; ++c) {
-                    colValue[x + c] = colSum[c];
-                }
-            }
-        } else {
-            unsigned char *lastCol = input + colOffSet[y - radius - 1];
-            unsigned char *nextCol = input + colOffSet[y + radius];
-            for (int x = 0; x < stride; x += channels) {
-                for (int c = 0; c < channels; ++c) {
-                    colValue[x + c] -= lastCol[x + c] - nextCol[x + c];
-                }
-            }
-        }
-        int prevSum[3] = {0};
-        for (int z = -radius; z <= radius; z++) {
-            int index = rowOffset[z];
-            for (int c = 0; c < channels; ++c) {
-                prevSum[c] += colValue[index + c];
-            }
-        }
-        for (int c = 0; c < channels; ++c) {
-            scanOutLine[c] = ClampToByte((prevSum[c] / windowSize - scanInLine[c]));
-        }
-        scanInLine += channels;
-        scanOutLine += channels;
-        for (int x = 1; x < width; x++) {
-            int lastRow = rowOffset[x - radius - 1];
-            int nextRow = rowOffset[x + radius];
-            for (int c = 0; c < channels; ++c) {
-                prevSum[c] = prevSum[c] - colValue[lastRow + c] + colValue[nextRow + c];
-                scanOutLine[c] = ClampToByte((prevSum[c] / windowSize - scanInLine[c]));
-            }
-            scanInLine += channels;
-            scanOutLine += channels;
-        }
-    }
-    if (colValue) free(colValue);
-    if (rowPos) free(rowPos);
-    if (colPos) free(colPos);
-}
 
-
-void skinDenoise(unsigned char *input, unsigned char *output, unsigned char *edge, int width, int height, int channels,
-                 int radius, int smoothingLevel) {
+void skinDenoise(unsigned char *input, unsigned char *output, int width, int height, int channels, int radius,
+                 int smoothingLevel) {
     if ((input == NULL) || (output == NULL)) return;
     if ((width <= 0) || (height <= 0)) return;
     if ((radius <= 0) || (smoothingLevel <= 0)) return;
@@ -327,7 +254,6 @@ void skinDenoise(unsigned char *input, unsigned char *output, unsigned char *edg
     for (int y = 0; y < height; y++) {
         unsigned char *scanInLine = input + y * stride;
         unsigned char *scanOutLine = output + y * stride;
-        unsigned char *scanEdgeLine = edge + y * stride;
         if (y == 0) {
             for (int x = 0; x < stride; x += channels) {
                 int colSum[3] = {0};
@@ -365,12 +291,13 @@ void skinDenoise(unsigned char *input, unsigned char *output, unsigned char *edg
         }
         for (int c = 0; c < channels; ++c) {
             const int mean = prevSum[c] / windowSize;
-            const int masked_edge = (scanEdgeLine[c] * scanInLine[c] + (256 - scanEdgeLine[c]) * mean) >> 8;
+            const int diff = mean - scanInLine[c];
+            const int edge = ClampToByte(diff);
+            const int masked_edge = (edge * scanInLine[c] + (256 - edge) * mean) >> 8;
             const int var = (prevPowerSum[c] - mean * prevSum[c]) / windowSize;
-            const int out = masked_edge - (mean - scanInLine[c]) * var / (var + smoothLut[scanInLine[c]]);
+            const int out = masked_edge - diff * var / (var + smoothLut[scanInLine[c]]);
             scanOutLine[c] = ClampToByte(out);
         }
-        scanEdgeLine += channels;
         scanInLine += channels;
         scanOutLine += channels;
         for (int x = 1; x < width; x++) {
@@ -380,12 +307,13 @@ void skinDenoise(unsigned char *input, unsigned char *output, unsigned char *edg
                 prevSum[c] = prevSum[c] - colValue[lastRow + c] + colValue[nextRow + c];
                 prevPowerSum[c] = prevPowerSum[c] - colPower[lastRow + c] + colPower[nextRow + c];
                 const int mean = prevSum[c] / windowSize;
-                const int masked_edge = (scanEdgeLine[c] * scanInLine[c] + (256 - scanEdgeLine[c]) * mean) >> 8;
+                const int diff = mean - scanInLine[c];
+                const int edge = ClampToByte(diff);
+                const int masked_edge = (edge * scanInLine[c] + (256 - edge) * mean) >> 8;
                 const int var = (prevPowerSum[c] - mean * prevSum[c]) / windowSize;
-                const int out = masked_edge - (mean - scanInLine[c]) * var / (var + smoothLut[scanInLine[c]]);
+                const int out = masked_edge - diff * var / (var + smoothLut[scanInLine[c]]);
                 scanOutLine[c] = ClampToByte(out);
             }
-            scanEdgeLine += channels;
             scanInLine += channels;
             scanOutLine += channels;
         }
@@ -401,22 +329,15 @@ void skinSmoothing(unsigned char *input, unsigned char *output, int width, int h
                    int smoothingLevel, int apply_skin_filter) {
     if (input == NULL || output == NULL || width == 0 || height == 0 || channels == 1)
         return;
-    unsigned char *edgeMap = (unsigned char *) malloc(width * height * channels * sizeof(unsigned char));
-    if (edgeMap == NULL) return;
     //1.detect skin color, adapt radius according to skin color ratio
     unsigned int skinSum = skinDetection(input, width, height, channels);
     float skin_rate = skinSum / (float) (width * height) * 100;
     int radius = min(width, height) / skin_rate + 1;
-    //2.perform edge detection to obtain a edge map
-    edgeDetection(input, edgeMap, width, height, channels, radius);
-    //3.based on edge map and smoothing level for apply skin denoise
-    skinDenoise(input, output, edgeMap, width, height, channels, radius, smoothingLevel);
-    //4.re-detect skin color based on the denoise results, filtered non-skin areas
+    //2.perform edge detection to obtain a edge map && smoothing level for apply skin denoise
+    skinDenoise(input, output, width, height, channels, radius, smoothingLevel);
+    //3.re-detect skin color based on the denoise results, filtered non-skin areas
     if (apply_skin_filter)
         skinFilter(input, output, width, height, channels);
-    if (edgeMap) {
-        free(edgeMap);
-    }
 }
 
 
