@@ -221,10 +221,6 @@ void getOffsetPos(int *offsetPos, int length, int left, int right, int step) {
     }
 }
 
-int Abs(int v) {
-    return (v ^ (v >> 31)) - (v >> 31);
-}
-
 void skinDenoise(unsigned char *input, unsigned char *output, int width, int height, int channels, int radius,
                  int smoothingLevel) {
     if ((input == NULL) || (output == NULL)) return;
@@ -297,7 +293,7 @@ void skinDenoise(unsigned char *input, unsigned char *output, int width, int hei
             const int diff = mean - scanInLine[c];
             const int edge = ClampToByte(diff);
             const int masked_edge = (edge * scanInLine[c] + (256 - edge) * mean) >> 8;
-            const int var = (prevPowerSum[c] - mean * prevSum[c]) / windowSize;
+            const int var = max(prevPowerSum[c] - mean * prevSum[c], 0) / windowSize;
             const int out = masked_edge - diff * var / (var + smoothLut[scanInLine[c]]);
             scanOutLine[c] = ClampToByte(out);
         }
@@ -313,7 +309,7 @@ void skinDenoise(unsigned char *input, unsigned char *output, int width, int hei
                 const int diff = mean - scanInLine[c];
                 const int edge = ClampToByte(diff);
                 const int masked_edge = (edge * scanInLine[c] + (256 - edge) * mean) >> 8;
-                const int var = Abs(prevPowerSum[c] - mean * prevSum[c]) / windowSize;
+                const int var = max(prevPowerSum[c] - mean * prevSum[c], 0) / windowSize;
                 const int out = masked_edge - diff * var / (var + smoothLut[scanInLine[c]]);
                 scanOutLine[c] = ClampToByte(out);
             }
